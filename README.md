@@ -1,7 +1,7 @@
 # Descriptions
 Github action flow for certain tasks
  - [Send telegram](send_telegram/)
- - Build and deploy (simple CI/CD strategy)
+ - [Build and deploy (simple CI/CD strategy)](build_deploy)
 
 ## Instructions
 1. Copy related file to your github action workflow folder
