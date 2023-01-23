@@ -6,4 +6,4 @@ Github action for sending telegram via your telegram bot
  - Save TELEGRAM_TO and TELEGRAM_TOKEN in [github secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets)
 
  ## Instructions
- - Flow the [main instruction steps](../README.md)
+ - Follow the [main instruction steps](../README.md)
