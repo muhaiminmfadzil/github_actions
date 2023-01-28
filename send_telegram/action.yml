@@ -5,9 +5,8 @@ on:
       - main
       - test
 jobs:
-
-  build:
-    name: Build
+  send_telegram:
+    name: Send Telegram
     runs-on: ubuntu-latest
     steps:
       - name: send default message
