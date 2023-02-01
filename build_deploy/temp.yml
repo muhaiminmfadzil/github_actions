@@ -1,0 +1,130 @@
+name: Build and deploy
+on:
+  push:
+    branches:
+      - prod
+      - test
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "ap-southeast-1"
+
+      - name: Authenticate docker with AWS ECR
+        run: aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}
+
+      - name: Get env file
+        run: aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/envs/${{ github.ref_name }}/.env.${{ github.ref_name }} .env
+
+      - name: Build
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}:temp-${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}:latest
+
+  # deploy:
+    # needs: build
+    # runs-on: ubuntu-latest
+    # steps:
+    #   - name: Checkout
+    #     uses: actions/checkout@v3
+
+    #   - name: Configure AWS Credentials
+    #     uses: aws-actions/configure-aws-credentials@v1-node16
+    #     with:
+    #       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+    #       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #       aws-region: "ap-southeast-1"
+
+    #   - name: Task definition creation
+    #     id: task-def
+    #     uses: aws-actions/amazon-ecs-render-task-definition@v1
+    #     with:
+    #       task-definition: task-def.json
+    #       container-name: ${{ env.CONTAINER_NAME }}-${{ github.ref_name }}
+    #       image: ${{ steps.build-image.outputs.image }}
+
+    #   - name: Deploy Amazon ECS task definition
+    #     uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+    #     with:
+    #       task-definition: new-task-def.json
+    #       service: ${{ secrets.AWS_ECS_SERVICE }}
+    #       cluster: ${{ secrets.AWS_ECS_CLUSTER }}
+    #       wait-for-service-stability: true
+
+  # deploy:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v1-node16
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: "ap-southeast-1"
+
+  #     - name: Create new EB Application Version
+  #       run: |
+  #         aws elasticbeanstalk create-application-version \
+  #         --application-name ${{ secrets.AWS_EB_APPLICATION_NAME }} \
+  #         --source-bundle S3Bucket="${{ secrets.AWS_S3_BUCKET }}",S3Key="envs/${{ github.ref_name }}/Dockerrun.aws.json" \
+  #         --version-label "${{ github.ref_name }}-${{ github.sha }}" \
+  #         --description "${{ github.ref_name }}-sha-${{ github.sha }}"
+  #     - name: Deploy new EB Application Version
+  #       run: aws elasticbeanstalk update-environment --environment-name ${{ secrets.AWS_EB_ENVIRONMENT_NAME }}-${{ github.ref_name }} --version-label "${{ github.ref_name }}-${{ github.sha }}" 
+
+  update-tag:
+    runs-on: ubuntu-latest
+    # needs: deploy
+    needs: build
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "ap-southeast-1"
+
+      - name: Authenticate docker with AWS ECR
+        run: aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}
+
+      - name: Update docker image tag
+        run: |
+          docker pull ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}:temp-${{ github.sha }}
+          docker tag ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}:temp-{{ github.sha }} ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}:latest
+          docker push ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_IMAGE_NAME }}:latest
+  # send_telegram:
+  #   needs: update-tag
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Send telegram notification
+  #       uses: appleboy/telegram-action@master
+  #       with:
+  #         to: ${{ secrets.TELEGRAM_TO }}
+  #         token: ${{ secrets.TELEGRAM_TOKEN }}
+  #         format: markdown
+  #         message: |
+  #           //----------------------------//
+            
+  #           ${{ github.actor }} pushed to ${{ github.ref_name }}
+            
+  #           *Repository* : ${{ github.repository }}
+            
+  #           *Commit message* : ${{ github.event.head_commit.message }}
+            
+  #           [See changes](https://github.com/${{ github.repository }}/commit/${{github.sha}})
+            
+  #           //----------------------------//
